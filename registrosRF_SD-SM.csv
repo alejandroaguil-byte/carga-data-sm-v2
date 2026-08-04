@@ -1,6 +1,7 @@
 CC_INCIDENT_ID;REQUESTOR_NAME;CURRENT_PHASE;STATUS;SUBMIT_DATE;CLOSE_DATE;BRIEF_DESCRIPTION;CATEGORY;SUBCATEGORY;CC_DETALLE_SERVICIO;CC_DETALLE;ASSIGNED_GROUP;ASSIGNED_TO;AFFECTED_ITEM;RF_ID
 --------------;--------------;-------------;------;-----------;----------;-----------------;--------;-----------;-------------------;----------;--------------;-----------;-------------;-----
-SD4664496;SAMUEL PAREDES SAEZ;Solicitud de Ticket;Abierto;2026-08-03 20:57:52;NULL;Solicitud  factibilidad 4 rack, proyecto 1604373 Universidad Técnica Federico Santa María;Requerimiento;Servicio Interno;Colocation;Consulta de capacidad;Capacidad;Nicolas.Salazar;CI1002031;RF494902
+SD4664496;SAMUEL PAREDES SAEZ;Solicitud de Ticket;Asignado a Grupo Resolutor;2026-08-04 13:57:34;NULL;Solicitud  factibilidad 4 rack, proyecto 1604373 Universidad Técnica Federico Santa María;Requerimiento;Servicio Interno;Colocation;Consulta de capacidad;Operaciones Infraestructura;Dabiana.Carrero;CI1002031;RF495112
+SD4664496;SAMUEL PAREDES SAEZ;Trabajo en Progreso;Trabajo en Progreso;2026-08-03 20:57:52;NULL;Solicitud  factibilidad 4 rack, proyecto 1604373 Universidad Técnica Federico Santa María;Requerimiento;Servicio Interno;Colocation;Consulta de capacidad;Capacidad;Nicolas.Salazar;CI1002031;RF494902
 SD4670828;JUAN BARRERA RAMOS;Trabajo en Progreso;Asignado a Grupo Resolutor;2026-08-03 20:57:44;NULL;INNOVIT SPA/ Ver direccionamiento IP;Requerimiento;Servicio Interno;Colocation;Revisión Virtualización;ProvisionVirtualizacionTI;Antonio.Palominos;CI1002031;RF494900
 SD4659959;SAMUEL PAREDES SAEZ;Resolución;Resuelto;2026-08-03 18:27:15;NULL;Regularización NIP y filtro de contenido VDOM SLEP COSTA CENTRAL – Proyecto 1596732;Requerimiento;Servicio Interno;Colocation;Apoyo habilitacion cliente;ProvisionConectividadTI;Ivan.Ariste;CI1002031;RF494810
 SD4521364;SAMUEL PAREDES SAEZ;Closure;Cerrado;2026-07-30 15:38:18;2026-08-02 18:35:42;Exportación de configuración clúster FortiGate HA – Laboratorios Saval;Requerimiento;Seguridad;Colocation;Revision de configuracion;Ingeniero Soporte N2;Byron.Ramirez;CI1002031;RF493753
@@ -1122,4 +1123,4 @@ SD1747749;JUAN BARRERA RAMOS;Closure;Cerrado;2025-01-03 14:17:22;2025-01-06 15:3
 SD1746191;JUAN BARRERA RAMOS;Closure;Cerrado;2025-01-03 02:21:05;2025-01-06 19:38:21;Subsecretaria de Vivienda y Urbanismo //Registro DNS;Requerimiento;Servicio Interno;Colocation;Torre Virtualizacion;Torre Virtualización;Sebastian.Panes;CI1002031;RF337969
 SD1745109;SAMUEL PAREDES SAEZ;Closure;Cerrado;2025-01-02 16:34:57;2025-01-05 17:37:35;DRass // Solicitud permisos ASA _ Veeam Backup// py 1592778;Requerimiento;Servicio Interno;Colocation;Apoyo habilitacion cliente;Plataforma T3 / Soporte Especializado;Victor.Covarrubias;CI1002031;RF337849
 
-(1121 rows affected)
+(1122 rows affected)

@@ -5,7 +5,7 @@
 [![Protocol-FTP-green](https://img.shields.io/badge/Protocol-FTP-green.svg)](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
 [![License-MIT-yellow](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Carga Data SM_v2** es una solución ETL (Extract, Transform, Load) automatizada diseñada para la extracción desatendida de datos operativos desde un servidor FTP (archivos HPSM CSV), su posterior deduplicación, limpieza, vinculación relacional con proyectos principales y carga directa a una base de datos Microsoft SQL Server (`Sharepoint_Proyectos`).
+**Carga Data SM_v2** es una solución ETL (Extract, Transform, Load) automatizada diseñada para la extracción desatendida de datos operativos desde un servidor FTP (archivos HPSM CSV), su posterior deduplicación, limpieza, vinculación relacional con proyectos principales, carga directa a una base de datos Microsoft SQL Server (`Sharepoint_Proyectos`), y **notificación automática por correo electrónico con bitácora de ejecución**.
 
 ---
 
@@ -15,6 +15,7 @@
 - 🧹 **Limpieza y Deduplicación al Vuelo**: Tratamiento de valores nulos, eliminación de caracteres especiales, y deduplicación por clave primaria (`CC_INCIDENT_ID` y `NUMBER`).
 - 🔗 **Relacionamiento Inteligente por RegEx**: Extracción dinámica de códigos de proyectos desde campos de texto libre (`BRIEF_DESCRIPTION` y `CC_PROYECT_NUMBER`) y mapeo directo con la tabla maestra `dbo.Proyectos` (`ID_Proyecto` y `Numero_Proyecto_Limpio`).
 - 🛡️ **Garantía de Integridad**: Validaciones cruzadas automáticas al finalizar la carga que verifican el 100% de coincidencia entre registros leídos y registros almacenados.
+- 📧 **Notificaciones Automatizadas por Email**: Módulo `ejecutar_y_notificar.py` que captura logs de ejecución (`ejecucion.log`) y reporta estados (`ÉXITO` o `ERROR`) por correo electrónico vía SMTP.
 - ⚙️ **Portabilidad y Despliegue Sencillo**: Estructura modular comentada paso a paso para rápida instalación en entornos Linux o Windows Server.
 - ⏰ **Programación Automática**: Diseñado para ejecutarse dos veces al día en horarios estratégicos (**08:45 AM** y **14:15 PM**).
 
@@ -28,8 +29,10 @@ Carga Data SM_v2/
 ├── PLAN_PROYECTO.md                    # Plan de proyecto, arquitectura y mapa de fases
 ├── PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md # Guía detallada de despliegue y cron/task scheduler
 ├── procesar_datos_ftp.py               # Script principal del proceso ETL (completamente documentado)
+├── ejecutar_y_notificar.py             # Script wrapper para ejecución desatendida, bitácora y envio de correo
 ├── Conexion BD                         # Archivo de parámetros de conexión a SQL Server
 ├── Conexion FTP                        # Archivo de parámetros de conexión al servidor FTP
+├── Conexion Email                      # Archivo de configuración SMTP para notificaciones
 ├── consultas_ejemplo_cruces.sql        # Consultas SQL para analítica y verificación de datos
 ├── requirements.txt                    # Dependencias Python (pymssql)
 ├── registrosRF_SD-SM.csv               # Ejemplo de dataset de incidentes/requerimientos SD
@@ -45,8 +48,8 @@ Carga Data SM_v2/
 
 - **Python**: Versión 3.8 o superior.
 - **Base de Datos**: Microsoft SQL Server con la base de datos `Sharepoint_Proyectos` alojada.
-- **Acceso a Red**: Conectividad al servidor FTP remoto (puerto 21) y SQL Server (puerto 1433).
-- **Librería del Sistema**: En servidores Linux se requiere `FreeTDS` (`libfree-tds-dev` en Ubuntu/Debian o `free-tds-devel` en RHEL/CentOS).
+- **Acceso a Red**: Conectividad al servidor FTP remoto (puerto 21), SQL Server (puerto 1433) y servidor SMTP (puerto 587 o 465).
+- **Librería del Sistema**: En servidores Linux se requiere `FreeTDS` (`libfreetds-dev` en Ubuntu/Debian o `free-tds-devel` en RHEL/CentOS).
 
 ---
 
@@ -89,19 +92,32 @@ Contraseña: contrasena_ftp
 Folder: HPSM
 ```
 
+#### `Conexion Email`
+```text
+Server: smtp.gmail.com
+Port: 587
+User: usuario@dominio.com
+Password: contrasena_o_app_password
+To: destinatario@dominio.com
+Use_TLS: True
+```
+
 ---
 
 ## 🚀 Ejecución Manual
 
-Para ejecutar manualmente el proceso ETL y verificar la carga:
+Para ejecutar manualmente el proceso ETL completo con notificación por correo y bitácora:
 
 ```bash
-python3 procesar_datos_ftp.py
+python3 ejecutar_y_notificar.py
 ```
 
 ### Ejemplo de Salida Esperada:
 
 ```text
+==================================================
+INICIO DE EJECUCIÓN: 2026-08-04 17:55:00
+==================================================
 ==================================================
 PROCESO DE CARGA Y VALIDACIÓN DE DATOS FTP A MSSQL (V2)
 ==================================================
@@ -122,6 +138,8 @@ Tabla 1 (dbo.registrosRF_SD_SM): Coincidencia: ✅ CORRECTO (100% de datos inser
 Tabla 2 (dbo.registrosSM_RFC):     Coincidencia: ✅ CORRECTO (100% de datos insertados)
 
 [PROCESO FINALIZADO CON ÉXITO]
+[EMAIL] Intentando enviar notificación a alejandroaguil@gmail.com...
+[EMAIL] ✅ Correo enviado exitosamente a alejandroaguil@gmail.com.
 ```
 
 ---
@@ -135,21 +153,21 @@ El proyecto está diseñado para ejecutarse automáticamente dos veces al día: 
 Edite el archivo cron (`crontab -e`) e incluya:
 
 ```cron
-# Ejecución diaria a las 08:45 AM
-45 8 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/procesar_datos_ftp.py >> /ruta/al/proyecto/ejecucion.log 2>&1
+# Ejecución diaria a las 08:45 AM con notificación por correo
+45 8 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
 
-# Ejecución diaria a las 14:15 PM
-15 14 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/procesar_datos_ftp.py >> /ruta/al/proyecto/ejecucion.log 2>&1
+# Ejecución diaria a las 14:15 PM con notificación por correo
+15 14 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
 ```
 
 ### En Windows (vía Task Scheduler)
 
 ```cmd
-schtasks /create /tn "CargaDataSM_0845" /tr "\"C:\Ruta\Al\Proyecto\venv\Scripts\python.exe\" \"C:\Ruta\Al\Proyecto\procesar_datos_ftp.py\"" /sc daily /st 08:45 /ru SYSTEM
-schtasks /create /tn "CargaDataSM_1415" /tr "\"C:\Ruta\Al\Proyecto\venv\Scripts\python.exe\" \"C:\Ruta\Al\Proyecto\procesar_datos_ftp.py\"" /sc daily /st 14:15 /ru SYSTEM
+schtasks /create /tn "CargaDataSM_0845" /tr "\"C:\Ruta\Al\Proyecto\venv\Scripts\python.exe\" \"C:\Ruta\Al\Proyecto\ejecutar_y_notificar.py\"" /sc daily /st 08:45 /ru SYSTEM
+schtasks /create /tn "CargaDataSM_1415" /tr "\"C:\Ruta\Al\Proyecto\venv\Scripts\python.exe\" \"C:\Ruta\Al\Proyecto\ejecutar_y_notificar.py\"" /sc daily /st 14:15 /ru SYSTEM
 ```
 
-Para una guía detallada paso a paso, consulte [PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md](file:///PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md).
+Para una guía detallada paso a paso, consulte [PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md](PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md).
 
 ---
 
@@ -159,7 +177,7 @@ El script realiza la inserción en las siguientes tablas de SQL Server:
 - `dbo.registrosRF_SD_SM` (Incidentes y solicitudes de servicio)
 - `dbo.registrosSM_RFC` (Solicitudes de cambio)
 
-Para realizar cruces analíticos entre los proyectos y sus respectivas RFCs o incidentes, utilice los ejemplos del archivo [consultas_ejemplo_cruces.sql](file:///consultas_ejemplo_cruces.sql).
+Para realizar cruces analíticos entre los proyectos y sus respectivas RFCs o incidentes, utilice los ejemplos del archivo [consultas_ejemplo_cruces.sql](consultas_ejemplo_cruces.sql).
 
 ---
 

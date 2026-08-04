@@ -4,13 +4,13 @@
 
 ## 1. RESUMEN EJECUTIVO Y OBJETIVOS
 
-El proyecto **Carga Data SM** tiene como objetivo automatizar la descarga, procesamiento, limpieza, enriquecimiento y carga masiva de datos operativos provenientes del servidor FTP (archivos HPSM CSV) hacia la base de datos Microsoft SQL Server **`Sharepoint_Proyectos`**.
+El proyecto **Carga Data SM** tiene como objetivo automatizar la descarga, procesamiento, limpieza, enriquecimiento, carga masiva de datos operativos provenientes del servidor FTP (archivos HPSM CSV) hacia la base de datos Microsoft SQL Server **`Sharepoint_Proyectos`**, y la notificación automática de resultados vía correo electrónico.
 
 ### Objetivos Clave:
 - **Automatización ETL**: Descarga desatendida y procesamiento diario de los archivos `registrosRF_SD-SM.csv` y `registrosSM-RFC.csv`.
 - **Integridad de Datos**: Definición de llaves primarias en la base de datos (`NUMBER` en `registrosSM_RFC` y `CC_INCIDENT_ID` en `registrosRF_SD_SM`) y deduplicación al vuelo.
 - **Trazabilidad y Relacionamiento**: Enlace de registros de incidentes y RFCs con la tabla maestra `dbo.Proyectos` mediante campos relacionales lógicos (`ID_Proyecto` y `Numero_Proyecto_Limpio`).
-- **Portabilidad y Automatización (`v2`)**: Creación del paquete portable `Carga Data SM_v2` documentado línea a línea para migración directa a cualquier servidor con ejecución programada diaria a las **08:45 AM** y **14:15 PM**.
+- **Portabilidad, Notificaciones y Automatización (`v2`)**: Creación del paquete portable `Carga Data SM_v2` documentado línea a línea con ejecutor de notificaciones SMTP `ejecutar_y_notificar.py` para migración directa a cualquier servidor con ejecución programada diaria a las **08:45 AM** y **14:15 PM**.
 
 ---
 
@@ -18,11 +18,16 @@ El proyecto **Carga Data SM** tiene como objetivo automatizar la descarga, proce
 
 ```mermaid
 flowchart TD
-    FTP[Servidor FTP Remote: HPSM] -->|Descarga CSVs| ETL[Script ETL procesar_datos_ftp.py]
+    CRON[Cron / Task Scheduler (08:45 AM & 14:15 PM)] -->|Ejecuta| NOTIF[Script ejecutar_y_notificar.py]
+    NOTIF -->|Subproceso| ETL[Script ETL procesar_datos_ftp.py]
+    FTP[Servidor FTP Remote: HPSM] -->|Descarga CSVs| ETL
     BD_P[MSSQL: dbo.Proyectos] -->|Lectura Mapa Proyectos| ETL
     ETL -->|Deduplicación & Limpieza Regex| REG
     REG -->|TRUNCATE & INSERT| BD_RF[MSSQL: dbo.registrosRF_SD_SM]
     REG -->|TRUNCATE & INSERT| BD_SM[MSSQL: dbo.registrosSM_RFC]
+    ETL -->|Captura Salida / Log| NOTIF
+    NOTIF -->|Guarda| LOG[Archivo ejecucion.log]
+    NOTIF -->|Envía Correo SMTP| MAIL[Notificación por Correo]
 
     subgraph "Base de Datos Sharepoint_Proyectos"
         BD_P
@@ -54,7 +59,8 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Enfoque** | Entorno de trabajo principal y desarrollo local | Paquete desplegable con comentarios exhaustivos |
 | **Script ETL** | `procesar_datos_ftp.py` | `procesar_datos_ftp.py` (Con etiquetas `[REEMPLAZAR EN NUEVO SERVIDOR]`) |
-| **Conexiones** | Archivos `Conexion BD` y `Conexion FTP` | Archivos `Conexion BD` y `Conexion FTP` parametrizables |
+| **Notificación & Logs** | `ejecutar_y_notificar.py` y `Conexion Email` | `ejecutar_y_notificar.py` y `Conexion Email` parametrizables |
+| **Conexiones** | Archivos `Conexion BD`, `Conexion FTP` y `Conexion Email` | Archivos `Conexion BD`, `Conexion FTP` y `Conexion Email` parametrizables |
 | **Consultas SQL** | `consultas_ejemplo_cruces.sql` | `consultas_ejemplo_cruces.sql` |
 | **Instrucciones** | Incluidas en el plan de trabajo | `PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md` completo |
 | **Dependencias** | Entorno local / venv | `requirements.txt` preconfigurado |
@@ -78,10 +84,15 @@ flowchart TD
 - [x] Comentario exhaustivo línea por línea en el script Python para facilitar cambios de parámetros en nuevos servidores.
 - [x] Elaboración de la suite de consultas SQL de prueba (`consultas_ejemplo_cruces.sql`).
 
-### Fase 4: Automatización y Despliegue en Servidor Receptor *(Pendiente en nuevo servidor)*
+### Fase 4: Notificación por Correo y Automatización *(Completado)*
+- [x] Creación del módulo `ejecutar_y_notificar.py` y configuración `Conexion Email`.
+- [x] Captura automática de bitácoras en `ejecucion.log` y envio de informe por correo electrónico.
+- [x] Actualización de la documentación de cron y programador de tareas para usar `ejecutar_y_notificar.py`.
+
+### Fase 5: Despliegue en Servidor Receptor *(Pendiente en servidor final)*
 - [ ] Copiar carpeta `Carga Data SM_v2` al servidor destino.
 - [ ] Instalar Python 3.8+ y dependencias (`pip install -r requirements.txt`).
-- [ ] Configurar los archivos `Conexion BD` y `Conexion FTP`.
+- [ ] Configurar los archivos `Conexion BD`, `Conexion FTP` y `Conexion Email`.
 - [ ] Programar la ejecución desatendida diaria a las **08:45 AM** y **14:15 PM** (vía Cron en Linux o Programador de Tareas en Windows).
 
 ---
@@ -94,5 +105,6 @@ flowchart TD
 
 ### Acciones de Monitoreo y Mantenimiento
 1. **Control de Logs**: El proceso redirige sus registros a `ejecucion.log`. Se recomienda verificar periódicamente que el mensaje final indique `[PROCESO FINALIZADO CON ÉXITO]`.
-2. **Alertas de Validación**: Si el script detecta que la cantidad de registros insertados en la base de datos no coincide con la cantidad de filas leídas en el CSV, registrará el mensaje `❌ DISCREPANCIA`.
-3. **Auditoría de Consultas**: Utilizar el script `consultas_ejemplo_cruces.sql` para monitorear la tasa de coincidencia entre las RFCs/Incidentes y los proyectos maestros.
+2. **Alertas por Correo**: Tras cada ejecución programada, se envía una notificación por correo indicando el estado (`ÉXITO` o `ERROR`) con la bitácora adjunta.
+3. **Alertas de Validación**: Si el script detecta que la cantidad de registros insertados en la base de datos no coincide con la cantidad de filas leídas en el CSV, registrará el mensaje `❌ DISCREPANCIA`.
+4. **Auditoría de Consultas**: Utilizar el script `consultas_ejemplo_cruces.sql` para monitorear la tasa de coincidencia entre las RFCs/Incidentes y los proyectos maestros.

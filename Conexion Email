@@ -1,0 +1,6 @@
+Server: smtp.gmail.com
+Port: 587
+User: alejandroaguil@gmail.com
+Password: uxurluizyvwyllws
+To: alejandroaguil@gmail.com
+Use_TLS: True
