@@ -1,0 +1,12 @@
+# ==============================================================================
+# CONFIGURACIÓN DE CONEXIÓN A BASE DE DATOS MSSQL
+# ==============================================================================
+# Modifique los valores a la derecha del signo ':' según los datos del nuevo servidor.
+# No agregue comillas alrededor de los valores.
+# ==============================================================================
+
+Server: 200.14.222.162
+Port: 1433
+User: sa
+Password: Cl4r0.2026*!
+Database: Sharepoint_Proyectos

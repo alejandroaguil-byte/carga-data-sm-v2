@@ -1,0 +1,12 @@
+# ==============================================================================
+# CONFIGURACIÓN DE CONEXIÓN AL SERVIDOR FTP
+# ==============================================================================
+# Modifique los valores a la derecha del signo ':' según los datos del servidor FTP.
+# No agregue comillas alrededor de los valores.
+# ==============================================================================
+
+Server: ftp.drivehq.com
+Port: 21
+Usuario: bobbasystem
+Contraseña: Cl4r0.2026*!
+Folder: HPSM
