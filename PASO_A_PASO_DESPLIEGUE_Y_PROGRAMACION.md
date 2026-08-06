@@ -1,6 +1,6 @@
-# Manual de Despliegue, Configuración y Programación - Carga Data SM_v2
+# Manual de Despliegue, Configuración y Programación - Carga Data SM_v2 (Versión 2.1)
 
-Este documento contiene la guía completa paso a paso para instalar, configurar y automatizar la ejecución del proyecto **Carga Data SM_v2** en un nuevo servidor (Linux o Windows), incluyendo la notificación automática por correo electrónico al finalizar la carga.
+Este documento contiene la guía completa paso a paso para instalar, configurar y automatizar la ejecución del proyecto **Carga Data SM_v2** en un nuevo servidor (Linux o Windows), incluyendo la extracción de datos desde FTP HPSM y BD SGA MSSQL, la notificación automática por correo electrónico al finalizar la carga y la suite de consultas de cruce de datos.
 
 ---
 
@@ -10,12 +10,14 @@ Asegúrese de copiar la carpeta completa `Carga Data SM_v2` al nuevo servidor. L
 
 ```text
 Carga Data SM_v2/
-├── Conexion BD                        # Archivo con credenciales e IP de la base de datos SQL Server
-├── Conexion FTP                       # Archivo con credenciales e IP del servidor FTP
+├── Conexion BD                        # Archivo con credenciales e IP de la base de datos SQL Server Destino (Sharepoint_Proyectos)
+├── Conexion BD SGA                    # Archivo con credenciales e IP de la base de datos SQL Server Origen SGA (blixter_prod)
+├── Conexion FTP                       # Archivo con credenciales e IP del servidor FTP (HPSM)
 ├── Conexion Email                     # Archivo con credenciales SMTP para notificaciones por correo
 ├── procesar_datos_ftp.py              # Script principal ETL (completamente comentado para migración)
 ├── ejecutar_y_notificar.py            # Script wrapper que ejecuta el ETL, registra logs y envía email
-├── consultas_ejemplo_cruces.sql       # Consultas SQL de ejemplo para cruzar datos en la BD
+├── consultas_ejemplo_cruces.sql       # Consultas SQL de ejemplo para cruzar incidentes y RFCs con Proyectos
+├── consultas_ejemplo_cruces_backlog.sql # Consultas SQL de ejemplo para cruzar CT_BACKLOG_OPERACIONES2 con Proyectos
 ├── requirements.txt                   # Dependencias de Python requeridas
 ├── PLAN_PROYECTO.md                   # Plan de proyecto y arquitectura detallada
 └── PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md # Este manual de instrucciones
@@ -65,17 +67,27 @@ Carga Data SM_v2/
 
 Antes de la primera ejecución, debe ajustar los archivos de configuración y verificar las rutas según las características del nuevo servidor.
 
-### A. Archivo `Conexion BD`
-Edite este archivo para ajustar los parámetros de la Base de Datos SQL Server:
+### A. Archivo `Conexion BD` (Destino SQL Server)
+Edite este archivo para ajustar los parámetros de la Base de Datos SQL Server de destino:
 ```text
 Server: IP_O_HOST_DEL_NUEVO_SQL_SERVER   # Ej: 200.14.222.162 o sqlserver.midominio.local
 Port: 1433                               # Puerto de MSSQL (por defecto 1433)
-User: usuario_sql                        # Usuario con permisos de Lectura/Escritura/Truncate
+User: usuario_sql                        # Usuario con permisos de Lectura/Escritura/Truncate/CreateTable
 Password: contrasena_sql                 # Contraseña del usuario SQL
 Database: Nombre_Base_Datos              # Nombre de la base de datos (Ej: Sharepoint_Proyectos)
 ```
 
-### B. Archivo `Conexion FTP`
+### B. Archivo `Conexion BD SGA` (Origen SQL Server SGA)
+Edite este archivo para ajustar los parámetros de la Base de Datos SQL Server de origen SGA:
+```text
+Server: 200.14.226.223                   # IP del servidor SGA MSSQL
+Port: 1433                               # Puerto de MSSQL
+User: reportes                           # Usuario con permisos de Lectura en CT_BACKLOG_OPERACIONES2
+Password: contrasena_sga                 # Contraseña del usuario SGA
+Database: blixter_prod                   # Base de datos de origen SGA
+```
+
+### C. Archivo `Conexion FTP`
 Edite este archivo para ajustar los parámetros del servidor FTP donde se descargan los archivos CSV:
 ```text
 Server: ftp.midominio.com                # IP o Dominio del servidor FTP
@@ -85,7 +97,7 @@ Contraseña: contrasena_ftp               # Contraseña del usuario FTP
 Folder: Carpeta_Remota                   # Directorio remoto donde están los CSV (Ej: HPSM)
 ```
 
-### C. Archivo `Conexion Email`
+### D. Archivo `Conexion Email`
 Edite este archivo para ajustar la cuenta de correo remitente/destinatario y credenciales SMTP:
 ```text
 Server: smtp.gmail.com                   # Servidor SMTP (ej: smtp.gmail.com o servidor interno)
@@ -96,15 +108,15 @@ To: destinatario@dominio.com             # Dirección de correo donde se enviar�
 Use_TLS: True                            # Usar cifrado TLS (True o False)
 ```
 
-### D. Parámetros en los Scripts Python
-- **`procesar_datos_ftp.py`**: Cada parámetro modificable está precedido por el comentario `[REEMPLAZAR EN NUEVO SERVIDOR]` (codificación CSV, rutas relativas, nombres de tablas SQL).
+### E. Parámetros en los Scripts Python
+- **`procesar_datos_ftp.py`**: Cada parámetro modificable está precedido por el comentario `[REEMPLAZAR EN NUEVO SERVIDOR]`.
 - **`ejecutar_y_notificar.py`**: Utiliza `Conexion Email` y ejecuta `procesar_datos_ftp.py`, capturando la salida para registrar en `ejecucion.log` y emitir el correo.
 
 ---
 
 ## 🚀 4. Verificación y Ejecución Manual
 
-Ejecute el script de notificación manualmente para confirmar que el proceso completo (FTP -> SQL Server -> Bitácora -> Email) funciona correctamente:
+Ejecute el script de notificación manualmente para confirmar que el proceso completo (FTP + SGA -> SQL Server Destino -> Bitácora -> Email) funciona correctamente:
 
 - **En Linux**:
   ```bash
@@ -126,35 +138,15 @@ El proceso debe ejecutarse diariamente en dos horarios específicos: **08:45 AM*
 
 ### Opción A: Programación en Linux mediante `crontab`
 
-1. Abrir la edición del programador de tareas `crontab` con el usuario que ejecutará el proceso:
-   ```bash
-   crontab -e
-   ```
+```cron
+# Ejecución diaria a las 08:45 AM con notificación por correo
+45 8 * * * /home/usuario/Desarrollos/Carga\ Data\ SM_v2/venv/bin/python3 /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecutar_y_notificar.py >> /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecucion.log 2>&1
 
-2. Agregar las siguientes dos líneas al final del archivo crontab (reemplazando `/home/usuario/Desarrollos/Carga Data SM_v2` por la ruta absoluta real de su servidor):
-
-   ```cron
-   # Ejecución diaria a las 08:45 AM con notificación por correo
-   45 8 * * * /home/usuario/Desarrollos/Carga\ Data\ SM_v2/venv/bin/python3 /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecutar_y_notificar.py >> /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecucion.log 2>&1
-
-   # Ejecución diaria a las 14:15 PM con notificación por correo
-   15 14 * * * /home/usuario/Desarrollos/Carga\ Data\ SM_v2/venv/bin/python3 /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecutar_y_notificar.py >> /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecucion.log 2>&1
-   ```
-
-   **Explicación de la sintaxis Cron**:
-   - `45 8 * * *`: Minuto 45, Hora 8 (8:45 AM), todos los días.
-   - `15 14 * * *`: Minuto 15, Hora 14 (2:15 PM / 14:15 PM), todos los días.
-   - `ejecutar_y_notificar.py`: Ejecuta el pipeline completo, registra la bitácora y envía el correo con el informe.
-
-3. Guardar y cerrar el editor.
-
----
+# Ejecución diaria a las 14:15 PM con notificación por correo
+15 14 * * * /home/usuario/Desarrollos/Carga\ Data\ SM_v2/venv/bin/python3 /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecutar_y_notificar.py >> /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecucion.log 2>&1
+```
 
 ### Opción B: Programación en Windows mediante `Programador de Tareas` (Task Scheduler)
-
-#### Vía Comandos (PowerShell / CMD como Administrador)
-
-Ejecute los siguientes comandos para crear automáticamente las dos tareas programadas:
 
 ```cmd
 :: Tarea 1: Ejecución a las 08:45 AM
@@ -164,26 +156,9 @@ schtasks /create /tn "CargaDataSM_0845" /tr "\"C:\Ruta\Al\Proyecto\Carga Data SM
 schtasks /create /tn "CargaDataSM_1415" /tr "\"C:\Ruta\Al\Proyecto\Carga Data SM_v2\venv\Scripts\python.exe\" \"C:\Ruta\Al\Proyecto\Carga Data SM_v2\ejecutar_y_notificar.py\"" /sc daily /st 14:15 /ru SYSTEM
 ```
 
-#### Vía Interfaz Gráfica de Windows (GUI)
-
-1. Presione `Win + R`, escriba `taskschd.msc` y presione **Enter**.
-2. En el panel derecho, haga clic en **Crear tarea...** (Create Task).
-3. **Pestaña General**:
-   - Nombre: `Carga Data SM - Proceso FTP y Notificación`
-   - Seleccionar: *"Ejecutar tanto si el usuario inició sesión como si no"* y *"Ejecutar con los privilegios más altos"*.
-4. **Pestaña Desencadenadores** (Triggers):
-   - Clic en **Nuevo...** $\rightarrow$ Elegir *Diariamente*, Hora de inicio: `08:45:00 AM`. Clic en Aceptar.
-   - Clic en **Nuevo...** $\rightarrow$ Elegir *Diariamente*, Hora de inicio: `02:15:00 PM` (`14:15:00`). Clic en Aceptar.
-5. **Pestaña Acciones** (Actions):
-   - Clic en **Nuevo...** $\rightarrow$ Acción: *Iniciar un programa*.
-   - **Programa o script**: `C:\Ruta\Al\Proyecto\Carga Data SM_v2\venv\Scripts\python.exe`
-   - **Agregar argumentos**: `ejecutar_y_notificar.py`
-   - **Iniciar en (opcional)**: `C:\Ruta\Al\Proyecto\Carga Data SM_v2\`
-6. Clic en **Aceptar** y guardar la tarea ingresando las credenciales de administrador.
-
 ---
 
 ## 📌 Resumen de Monitoreo y Verificación
 - **Archivo Log en Linux**: Revise los resultados ejecutando `tail -f /home/usuario/Desarrollos/Carga\ Data\ SM_v2/ejecucion.log`.
 - **Notificaciones por Correo**: Revise la bandeja de entrada configurada en `Conexion Email`.
-- **Validación en BD**: Ejecute las consultas contenidas en `consultas_ejemplo_cruces.sql` para verificar la correcta vinculación de las tablas.
+- **Validación en BD**: Ejecute las consultas contenidas en `consultas_ejemplo_cruces.sql` y `consultas_ejemplo_cruces_backlog.sql` para verificar la correcta vinculación de las tablas.

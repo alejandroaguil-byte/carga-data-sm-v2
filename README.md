@@ -1,23 +1,29 @@
-# 🚀 Carga Data SM_v2 — Sistema ETL de Automatización FTP a Microsoft SQL Server
+# 🚀 Carga Data SM_v2 — Sistema ETL de Automatización FTP & SGA a Microsoft SQL Server (v2.2.0)
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Database-MSSQL-red](https://img.shields.io/badge/Database-SQL%20Server-red.svg)](https://www.microsoft.com/sql-server/)
 [![Protocol-FTP-green](https://img.shields.io/badge/Protocol-FTP-green.svg)](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
 [![License-MIT-yellow](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release-v2.2.0-blueviolet](https://img.shields.io/badge/Release-v2.2.0-blueviolet.svg)](https://github.com/alejandroaguil-byte/carga-data-sm-v2/releases/tag/v2.2.0)
 
-**Carga Data SM_v2** es una solución ETL (Extract, Transform, Load) automatizada diseñada para la extracción desatendida de datos operativos desde un servidor FTP (archivos HPSM CSV), su posterior deduplicación, limpieza, vinculación relacional con proyectos principales, carga directa a una base de datos Microsoft SQL Server (`Sharepoint_Proyectos`), y **notificación automática por correo electrónico con bitácora de ejecución**.
+**Carga Data SM_v2** es una solución ETL (Extract, Transform, Load) automatizada diseñada para la extracción desatendida de datos operativos desde:
+1. Servidor FTP (archivos HPSM CSV: incidentes y solicitudes de cambio).
+2. Base de Datos MSSQL SGA (`blixter_prod`: tabla de backlog operacionales `CT_BACKLOG_OPERACIONES2`).
+
+Los datos son procesados, limpiados, enriquecidos mediante vinculación relacional lógica con la tabla de proyectos maestros `dbo.Proyectos`, insertados de forma masiva en la base de datos `Sharepoint_Proyectos`, y **reportados mediante notificaciones automáticas por correo electrónico con bitácora de ejecución**.
 
 ---
 
 ## 📌 Características Principales
 
-- 🔄 **Descarga Desatendida FTP**: Conexión remota automatizada y descarga de los reportes `registrosRF_SD-SM.csv` y `registrosSM-RFC.csv`.
-- 🧹 **Limpieza y Deduplicación al Vuelo**: Tratamiento de valores nulos, eliminación de caracteres especiales, y deduplicación por clave primaria (`CC_INCIDENT_ID` y `NUMBER`).
-- 🔗 **Relacionamiento Inteligente por RegEx**: Extracción dinámica de códigos de proyectos desde campos de texto libre (`BRIEF_DESCRIPTION` y `CC_PROYECT_NUMBER`) y mapeo directo con la tabla maestra `dbo.Proyectos` (`ID_Proyecto` y `Numero_Proyecto_Limpio`).
-- 🛡️ **Garantía de Integridad**: Validaciones cruzadas automáticas al finalizar la carga que verifican el 100% de coincidencia entre registros leídos y registros almacenados.
-- 📧 **Notificaciones Automatizadas por Email**: Módulo `ejecutar_y_notificar.py` que captura logs de ejecución (`ejecucion.log`) y reporta estados (`ÉXITO` o `ERROR`) por correo electrónico vía SMTP.
-- ⚙️ **Portabilidad y Despliegue Sencillo**: Estructura modular comentada paso a paso para rápida instalación en entornos Linux o Windows Server.
-- ⏰ **Programación Automática**: Diseñado para ejecutarse dos veces al día en horarios estratégicos (**08:45 AM** y **14:15 PM**).
+- 🔄 **Descarga Desatendida FTP**: Conexión remota automatizada y descarga de reportes HPSM (`registrosRF_SD-SM.csv` y `registrosSM-RFC.csv`).
+- 🗄️ **Extracción Desatendida de BD SGA**: Lectura y extracción masiva desde la tabla `CT_BACKLOG_OPERACIONES2` (162,221+ registros y 104 columnas) en la base de datos SGA (`blixter_prod`).
+- 🧹 **Limpieza y Deduplicación al Vuelo**: Tratamiento de valores nulos, normalización de campos y deduplicación por clave primaria.
+- 🔗 **Relacionamiento Inteligente por RegEx**: Extracción dinámica de números de proyecto desde texto libre (`BRIEF_DESCRIPTION`, `CC_PROYECT_NUMBER` y `NRO_PROYECTO`) y mapeo directo con `dbo.Proyectos` (`ID_Proyecto` y `Numero_Proyecto_Limpio`).
+- 💯 **Conservación Completa de Datos (100%)**: Carga del 100% de los registros de Backlog independientemente de si cruzan con la tabla de proyectos (`ID_Proyecto` = `NULL` para registros sin coincidencia).
+- 🛡️ **Garantía de Integridad**: Validaciones cruzadas automáticas al finalizar la carga que verifican el 100% de coincidencia entre registros leídos y almacenados en las 3 tablas de destino.
+- 📧 **Notificaciones Automatizadas por Email**: Módulo `ejecutar_y_notificar.py` que captura logs (`ejecucion.log`) y notifica resultados (`ÉXITO` o `ERROR`) por correo electrónico vía SMTP.
+- ⏰ **Programación Automática**: Diseñado para ejecutarse diariamente a las **08:45 AM** y **14:15 PM**.
 
 ---
 
@@ -30,13 +36,15 @@ Carga Data SM_v2/
 ├── PASO_A_PASO_DESPLIEGUE_Y_PROGRAMACION.md # Guía detallada de despliegue y cron/task scheduler
 ├── procesar_datos_ftp.py               # Script principal del proceso ETL (completamente documentado)
 ├── ejecutar_y_notificar.py             # Script wrapper para ejecución desatendida, bitácora y envio de correo
-├── Conexion BD                         # Archivo de parámetros de conexión a SQL Server
-├── Conexion FTP                        # Archivo de parámetros de conexión al servidor FTP
-├── Conexion Email                      # Archivo de configuración SMTP para notificaciones
-├── consultas_ejemplo_cruces.sql        # Consultas SQL para analítica y verificación de datos
+├── Conexion BD                         # Parámetros de conexión a SQL Server Destino (Sharepoint_Proyectos)
+├── Conexion BD SGA                     # Parámetros de conexión a SQL Server Origen SGA (blixter_prod)
+├── Conexion FTP                        # Parámetros de conexión al servidor FTP
+├── Conexion Email                      # Parámetros de configuración SMTP para notificaciones
+├── consultas_ejemplo_cruces.sql        # Consultas SQL de ejemplo para cruzar incidentes y RFCs con Proyectos
+├── consultas_ejemplo_cruces_backlog.sql # Consultas SQL para cruzar CT_BACKLOG_OPERACIONES2 con Proyectos
 ├── requirements.txt                    # Dependencias Python (pymssql)
-├── registrosRF_SD-SM.csv               # Ejemplo de dataset de incidentes/requerimientos SD
-├── registrosSM-RFC.csv                 # Ejemplo de dataset de solicitudes de cambio RFC
+├── registrosRF_SD-SM.csv               # Dataset de prueba de incidentes SD
+├── registrosSM-RFC.csv                 # Dataset de prueba de solicitudes de cambio RFC
 └── skills/
     └── carga-data-sm-etl/
         └── SKILL.md                    # Skill de automatización e instrucciones para Antigravity AI
@@ -47,9 +55,11 @@ Carga Data SM_v2/
 ## 🛠️ Requisitos Previos
 
 - **Python**: Versión 3.8 o superior.
-- **Base de Datos**: Microsoft SQL Server con la base de datos `Sharepoint_Proyectos` alojada.
-- **Acceso a Red**: Conectividad al servidor FTP remoto (puerto 21), SQL Server (puerto 1433) y servidor SMTP (puerto 587 o 465).
-- **Librería del Sistema**: En servidores Linux se requiere `FreeTDS` (`libfreetds-dev` en Ubuntu/Debian o `free-tds-devel` en RHEL/CentOS).
+- **Bases de Datos**:
+  - Microsoft SQL Server Destino (`Sharepoint_Proyectos`).
+  - Microsoft SQL Server Origen SGA (`blixter_prod`).
+- **Acceso a Red**: Conectividad a FTP (puerto 21), SQL Server (puerto 1433) y SMTP (puerto 587 o 465).
+- **Librería del Sistema**: En Linux se requiere `FreeTDS` (`libfreetds-dev` en Ubuntu/Debian o `free-tds-devel` en RHEL/CentOS).
 
 ---
 
@@ -74,13 +84,22 @@ pip install -r requirements.txt
 
 Edite los archivos de configuración con las credenciales correspondientes a su entorno:
 
-#### `Conexion BD`
+#### `Conexion BD` (Destino)
 ```text
 Server: IP_O_HOST_SQL_SERVER
 Port: 1433
 User: usuario_sql
 Password: contrasena_sql
 Database: Sharepoint_Proyectos
+```
+
+#### `Conexion BD SGA` (Origen SGA)
+```text
+Server: 200.14.226.223
+Port: 1433
+User: reportes
+Password: contrasena_sga
+Database: blixter_prod
 ```
 
 #### `Conexion FTP`
@@ -116,26 +135,27 @@ python3 ejecutar_y_notificar.py
 
 ```text
 ==================================================
-INICIO DE EJECUCIÓN: 2026-08-04 17:55:00
+INICIO DE EJECUCIÓN: 2026-08-05 20:38:56
 ==================================================
 ==================================================
-PROCESO DE CARGA Y VALIDACIÓN DE DATOS FTP A MSSQL (V2)
+PROCESO DE CARGA Y VALIDACIÓN DE DATOS FTP Y SGA A MSSQL (V2.1)
 ==================================================
-[FTP] Conectando a 200.14.222.162:21...
-[FTP] Autenticación exitosa.
-[FTP] Descargando 'registrosRF_SD-SM.csv'...
-[FTP] Descargando 'registrosSM-RFC.csv'...
-[CSV] Parseando datos de archivos CSV...
+[FTP] Descargando archivos HPSM CSV...
+[SGA] Extrayendo todos los registros de 'CT_BACKLOG_OPERACIONES2'...
+[SGA] Extracción exitosa: 162221 registros leídos en 19.65 segundos.
 [MSSQL] Cargando mapa de proyectos desde 'dbo.Proyectos'...
 [ETL] Enrumando y relacionando registros con 'dbo.Proyectos'...
 [MSSQL] Truncando datos de las tablas existentes...
-[MSSQL] Insertando registros enriquecidos...
+[MSSQL] Insertando registros enriquecidos en 'dbo.registrosRF_SD_SM'...
+[MSSQL] Insertando registros enriquecidos en 'dbo.registrosSM_RFC'...
+[MSSQL] Insertando 162221 registros enriquecidos en 'dbo.CT_BACKLOG_OPERACIONES2'...
 
 ==================================================
-VALIDACIÓN Y COMPARACIÓN DE DATOS (CSV vs MSSQL)
+VALIDACIÓN Y COMPARACIÓN DE DATOS (ORIGEN vs MSSQL)
 ==================================================
 Tabla 1 (dbo.registrosRF_SD_SM): Coincidencia: ✅ CORRECTO (100% de datos insertados)
 Tabla 2 (dbo.registrosSM_RFC):     Coincidencia: ✅ CORRECTO (100% de datos insertados)
+Tabla 3 (dbo.CT_BACKLOG_OPERACIONES2): Coincidencia: ✅ CORRECTO (100% de datos insertados)
 
 [PROCESO FINALIZADO CON ÉXITO]
 [EMAIL] Intentando enviar notificación a alejandroaguil@gmail.com...
@@ -149,8 +169,6 @@ Tabla 2 (dbo.registrosSM_RFC):     Coincidencia: ✅ CORRECTO (100% de datos ins
 El proyecto está diseñado para ejecutarse automáticamente dos veces al día: **08:45 AM** y **14:15 PM**.
 
 ### En Linux (vía Cron)
-
-Edite el archivo cron (`crontab -e`) e incluya:
 
 ```cron
 # Ejecución diaria a las 08:45 AM con notificación por correo
@@ -174,10 +192,13 @@ Para una guía detallada paso a paso, consulte [PASO_A_PASO_DESPLIEGUE_Y_PROGRAM
 ## 📊 Arquitectura de Datos y Consultas SQL
 
 El script realiza la inserción en las siguientes tablas de SQL Server:
-- `dbo.registrosRF_SD_SM` (Incidentes y solicitudes de servicio)
-- `dbo.registrosSM_RFC` (Solicitudes de cambio)
+- `dbo.registrosRF_SD_SM` (Incidentes y solicitudes de servicio HPSM)
+- `dbo.registrosSM_RFC` (Solicitudes de cambio HPSM)
+- `dbo.CT_BACKLOG_OPERACIONES2` (Backlog de operaciones SGA)
 
-Para realizar cruces analíticos entre los proyectos y sus respectivas RFCs o incidentes, utilice los ejemplos del archivo [consultas_ejemplo_cruces.sql](consultas_ejemplo_cruces.sql).
+Para realizar cruces analíticos entre los proyectos y las demás tablas, utilice:
+- [consultas_ejemplo_cruces.sql](consultas_ejemplo_cruces.sql) (Cruces Incidentes y RFCs).
+- [consultas_ejemplo_cruces_backlog.sql](consultas_ejemplo_cruces_backlog.sql) (Cruces Backlog Operaciones SGA).
 
 ---
 

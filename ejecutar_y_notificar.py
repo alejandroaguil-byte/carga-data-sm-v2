@@ -104,7 +104,7 @@ def main():
             stderr=subprocess.STDOUT,
             text=True,
             cwd=base_dir,
-            timeout=300
+            timeout=1200
         )
         salida_script = resultado.stdout
         codigo_salida = resultado.returncode

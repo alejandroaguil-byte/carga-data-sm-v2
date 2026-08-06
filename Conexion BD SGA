@@ -1,0 +1,12 @@
+# ==============================================================================
+# CONFIGURACIÓN DE CONEXIÓN A BASE DE DATOS MSSQL SGA
+# ==============================================================================
+# Modifique los valores a la derecha del signo ':' según los datos del nuevo servidor.
+# No agregue comillas alrededor de los valores.
+# ==============================================================================
+
+Server: 200.14.226.223
+Port: 1433
+User: reportes
+Password: (8nFJ/habA7s4%aT
+Database: blixter_prod

@@ -2,13 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
-SCRIPT ETL DE CARGA, LIMPIEZA Y VALIDACIÓN DE DATOS FTP A MSSQL (VERSIÓN 2)
+SCRIPT ETL DE CARGA, LIMPIEZA Y VALIDACIÓN DE DATOS FTP Y SGA A MSSQL (VERSIÓN 2.1)
 ==============================================================================
 Proyecto: Carga Data SM_v2
 Descripción:
-  Este script descarga archivos CSV desde un servidor FTP, realiza la limpieza
-  y deduplicación de registros, relaciona los incidentes y solicitudes de cambio
-  con la tabla 'dbo.Proyectos', y carga los datos procesados en SQL Server (MSSQL).
+  Este script descarga archivos CSV desde un servidor FTP (HPSM) y extrae los
+  datos de la tabla CT_BACKLOG_OPERACIONES2 desde la BD SGA (MSSQL).
+  Realiza la limpieza, deduplicación y enriquecimiento de los registros,
+  relacionándolos con la tabla 'dbo.Proyectos', y carga los datos procesados
+  en la base de datos de destino 'Sharepoint_Proyectos' en SQL Server.
 
 [PARÁMETROS MODIFICABLES POR SERVIDOR]:
   Revise los comentarios en el código que comienzan con '[REEMPLAZAR EN NUEVO SERVIDOR]'
@@ -19,6 +21,7 @@ Descripción:
 import os
 import sys
 import re
+import time
 import datetime
 from ftplib import FTP
 import pymssql
@@ -36,7 +39,6 @@ def cargar_configuracion(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            # Ignorar líneas vacías o comentarios que inician con '#'
             if not line or line.startswith('#') or ':' not in line:
                 continue
             key, val = line.split(':', 1)
@@ -48,25 +50,15 @@ def descargar_archivos_ftp(config_ftp, archivos_a_descargar, dir_destino="."):
     """
     Conecta al servidor FTP y descarga la lista de archivos especificados.
     """
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Si la IP o Host predeterminado del FTP cambia
-    host = config_ftp.get('Server', 'ftp.drivehq.com')  # Host por defecto si falla la lectura del archivo
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Si el puerto del servidor FTP cambia (ejemplo: 21 para FTP, 990 para FTPS)
+    host = config_ftp.get('Server', 'ftp.drivehq.com')
     port = int(config_ftp.get('Port', 21))
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Credenciales FTP predeterminadas
     usuario = config_ftp.get('Usuario', 'bobbasystem')
     password = config_ftp.get('Contraseña', '')
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Directorio remoto donde están alojados los CSV en el servidor FTP
     folder = config_ftp.get('Folder', 'HPSM')
 
     print(f"[FTP] Conectando a {host}:{port}...")
     ftp = FTP()
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Timeout de conexión FTP en segundos (actualmente 30 segs)
     ftp.connect(host, port, timeout=30)
-    
     ftp.login(usuario, password)
     print(f"[FTP] Autenticación exitosa.")
 
@@ -78,11 +70,8 @@ def descargar_archivos_ftp(config_ftp, archivos_a_descargar, dir_destino="."):
     for filename in archivos_a_descargar:
         local_path = os.path.join(dir_destino, filename)
         print(f"[FTP] Descargando '{filename}'...")
-        
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Modo de apertura del archivo local ('wb' para binario)
         with open(local_path, 'wb') as f_local:
             ftp.retrbinary(f"RETR {filename}", f_local.write)
-            
         archivos_descargados[filename] = local_path
         print(f"[FTP] Descargado '{filename}' ({os.path.getsize(local_path)} bytes).")
 
@@ -98,8 +87,6 @@ def limpiar_valor(val):
     if val is None:
         return None
     val_str = str(val).strip()
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Agregar otras representaciones de nulos si el origen las incluye
     if val_str.upper() in ('NULL', '', 'NONE', 'N/A', 'UNDEFINED'):
         return None
     return val_str
@@ -111,9 +98,6 @@ def extraer_numero_proyecto_limpio(cadena):
     """
     if not cadena:
         return None
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Expresión regular si el formato numérico de proyectos cambia
-    # Busca secuencias de 6 a 10 dígitos (ignorando ceros no significativos al inicio)
     match = re.search(r'\b0*(\d{6,10})\b', str(cadena))
     if match:
         return match.group(1)
@@ -124,7 +108,6 @@ def obtener_mapa_proyectos(cursor):
     """
     Carga el diccionario de mapeo entre Numero_Proyecto (limpio) e ID de la tabla Proyectos en la BD.
     """
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar 'dbo.Proyectos', 'ID' o 'Numero_Proyecto' si la tabla de proyectos cambia de nombre o esquema
     query_proyectos = "SELECT ID, Numero_Proyecto FROM dbo.Proyectos WHERE Numero_Proyecto IS NOT NULL;"
     cursor.execute(query_proyectos)
     
@@ -143,16 +126,12 @@ def parsear_csv_rf_sd_sm(filepath):
     Parsea el archivo registrosRF_SD-SM.csv.
     """
     rows = []
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar 'latin-1' a 'utf-8' o 'cp1252' si cambia la codificación del CSV
     encoding_csv = 'latin-1'
-    
     with open(filepath, 'r', encoding=encoding_csv) as f:
         lines = f.readlines()
 
     header_idx = -1
     for i, l in enumerate(lines[:10]):
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar la palabra clave de encabezado si el CSV modifica sus columnas
         if 'CC_INCIDENT_ID;' in l:
             header_idx = i
             break
@@ -160,16 +139,12 @@ def parsear_csv_rf_sd_sm(filepath):
     if header_idx == -1:
         raise ValueError(f"No se encontró el encabezado en {filepath}")
 
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar el delimitador ';' si el CSV pasa a usar coma ',' o tabulador '\t'
     delimitador = ';'
-
     for line in lines[header_idx + 1:]:
         l_str = line.strip()
         if not l_str or l_str.startswith('-') or 'row(s) affected' in l_str:
             continue
         parts = line.rstrip('\r\n').split(delimitador)
-        
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar el número mínimo de columnas esperadas (actualmente 15)
         if len(parts) < 15:
             continue
         row = tuple(limpiar_valor(parts[idx]) for idx in range(15))
@@ -183,16 +158,12 @@ def parsear_csv_sm_rfc(filepath):
     Parsea el archivo registrosSM-RFC.csv.
     """
     rows = []
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar 'latin-1' si cambia la codificación del archivo
     encoding_csv = 'latin-1'
-    
     with open(filepath, 'r', encoding=encoding_csv) as f:
         lines = f.readlines()
 
     header_idx = -1
     for i, l in enumerate(lines[:10]):
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Identificador de encabezado
         if 'NUMBER;' in l:
             header_idx = i
             break
@@ -200,16 +171,12 @@ def parsear_csv_sm_rfc(filepath):
     if header_idx == -1:
         raise ValueError(f"No se encontró el encabezado en {filepath}")
 
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Delimitador del archivo CSV
     delimitador = ';'
-
     for line in lines[header_idx + 1:]:
         l_str = line.strip()
         if not l_str or l_str.startswith('-') or 'row(s) affected' in l_str:
             continue
         parts = line.rstrip('\r\n').split(delimitador)
-        
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Número total de columnas esperadas en RFC (actualmente 11)
         while len(parts) < 11:
             parts.append('')
         row = tuple(limpiar_valor(parts[idx]) for idx in range(11))
@@ -218,45 +185,119 @@ def parsear_csv_sm_rfc(filepath):
     return rows
 
 
+def extraer_backlog_sga(config_sga):
+    """
+    Conecta a la base de datos MSSQL SGA y extrae los registros de CT_BACKLOG_OPERACIONES2.
+    """
+    host = config_sga.get('Server', '200.14.226.223')
+    port = int(config_sga.get('Port', 1433))
+    usuario = config_sga.get('User', 'reportes')
+    password = config_sga.get('Password', '')
+    database = config_sga.get('Database', 'blixter_prod')
+
+    print(f"\n[SGA] Conectando a {host}:{port} / BD: {database}...")
+    conn_sga = pymssql.connect(
+        server=host,
+        port=port,
+        user=usuario,
+        password=password,
+        database=database,
+        login_timeout=30
+    )
+    cursor_sga_dict = conn_sga.cursor(as_dict=True)
+
+    cursor_sga_dict.execute("""
+        SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'CT_BACKLOG_OPERACIONES2'
+        ORDER BY ORDINAL_POSITION
+    """)
+    cols_info = cursor_sga_dict.fetchall()
+
+    cursor_sga_tuple = conn_sga.cursor(as_dict=False)
+    print("[SGA] Extrayendo todos los registros de 'CT_BACKLOG_OPERACIONES2'...")
+    t0 = time.time()
+    cursor_sga_tuple.execute("SELECT * FROM CT_BACKLOG_OPERACIONES2")
+    rows = cursor_sga_tuple.fetchall()
+    t1 = time.time()
+    print(f"[SGA] Extracción exitosa: {len(rows)} registros leídos en {round(t1 - t0, 2)} segundos.")
+
+    conn_sga.close()
+    return cols_info, rows
+
+
+def asegurar_tabla_backlog_destino(cursor_target, cols_info):
+    """
+    Garantiza la existencia de la tabla dbo.CT_BACKLOG_OPERACIONES2 en la BD destino.
+    """
+    cursor_target.execute("SELECT OBJECT_ID('dbo.CT_BACKLOG_OPERACIONES2')")
+    res = cursor_target.fetchone()
+    if res and res[0] is not None:
+        print("[MSSQL] La tabla 'dbo.CT_BACKLOG_OPERACIONES2' ya existe en la BD destino.")
+        return
+
+    print("[MSSQL] La tabla 'dbo.CT_BACKLOG_OPERACIONES2' no existe. Creándola...")
+    col_defs = []
+    for c in cols_info:
+        col_name = c['COLUMN_NAME']
+        dt = c['DATA_TYPE'].lower()
+        l = c['CHARACTER_MAXIMUM_LENGTH']
+        
+        if dt in ('varchar', 'nvarchar', 'char', 'nchar'):
+            if l == -1 or l is None or l > 4000:
+                type_str = f"{dt.upper()}(MAX)"
+            else:
+                type_str = f"{dt.upper()}({l})"
+        else:
+            type_str = dt.upper()
+        
+        col_defs.append(f"[{col_name}] {type_str} NULL")
+
+    col_defs.append("[ID_Proyecto] NUMERIC NULL")
+    col_defs.append("[Numero_Proyecto_Limpio] VARCHAR(50) NULL")
+
+    ddl_sql = f"CREATE TABLE dbo.CT_BACKLOG_OPERACIONES2 (\n    " + ",\n    ".join(col_defs) + "\n);"
+    cursor_target.execute(ddl_sql)
+    print("[MSSQL] Tabla 'dbo.CT_BACKLOG_OPERACIONES2' creada con éxito con 106 columnas.")
+
+
 def main():
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Si la ruta raíz del proyecto no es relativa al script actual
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Nombre o ruta absoluta de los archivos de configuración de conexión
-    ruta_bd_cfg = os.path.join(base_dir, 'Conexion BD')    # Ruta del archivo de config BD
-    ruta_ftp_cfg = os.path.join(base_dir, 'Conexion FTP')  # Ruta del archivo de config FTP
+    ruta_bd_cfg = os.path.join(base_dir, 'Conexion BD')
+    ruta_ftp_cfg = os.path.join(base_dir, 'Conexion FTP')
+    ruta_sga_cfg = os.path.join(base_dir, 'Conexion BD SGA')
 
     print("==================================================")
-    print("PROCESO DE CARGA Y VALIDACIÓN DE DATOS FTP A MSSQL (V2)")
+    print("PROCESO DE CARGA Y VALIDACIÓN DE DATOS FTP Y SGA A MSSQL (V2.1)")
     print("==================================================")
 
     config_bd = cargar_configuracion(ruta_bd_cfg)
     config_ftp = cargar_configuracion(ruta_ftp_cfg)
+    config_sga = cargar_configuracion(ruta_sga_cfg)
 
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Nombres de los archivos a descargar desde el servidor FTP
+    # 1. Descarga FTP
     archivos_ftp = ['registrosRF_SD-SM.csv', 'registrosSM-RFC.csv']
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Directorio de descarga local (actualmente 'base_dir')
-    dir_descarga_local = base_dir
-    
-    descargados = descargar_archivos_ftp(config_ftp, archivos_ftp, dir_destino=dir_descarga_local)
+    descargados = descargar_archivos_ftp(config_ftp, archivos_ftp, dir_destino=base_dir)
 
-    # 3. Parsear archivos localmente
+    # 2. Parsear CSVs localmente
     print("\n[CSV] Parseando datos de archivos CSV...")
     raw_data_rf_sd_sm = parsear_csv_rf_sd_sm(descargados['registrosRF_SD-SM.csv'])
     data_sm_rfc_raw = parsear_csv_sm_rfc(descargados['registrosSM-RFC.csv'])
 
-    # Deduplicar por CC_INCIDENT_ID para respetar la llave primaria
     dict_rf = {}
     for row in raw_data_rf_sd_sm:
-        dict_rf[row[0]] = row  # row[0] corresponde a CC_INCIDENT_ID
+        dict_rf[row[0]] = row
     data_rf_sd_sm_raw = list(dict_rf.values())
 
     print(f"[CSV] 'registrosRF_SD-SM.csv': {len(raw_data_rf_sd_sm)} registros leídos ({len(data_rf_sd_sm_raw)} únicos por CC_INCIDENT_ID).")
     print(f"[CSV] 'registrosSM-RFC.csv': {len(data_sm_rfc_raw)} registros leídos.")
 
-    # 4. Conectar a MSSQL
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Parámetros por defecto para conexión SQL Server si fallan los archivos de config
+    # 3. Extraer Backlog desde BD SGA
+    cols_info_sga, rows_sga = extraer_backlog_sga(config_sga)
+    col_names_sga = [c['COLUMN_NAME'] for c in cols_info_sga]
+
+    # 4. Conectar a MSSQL Destino
     server = config_bd.get('Server', '200.14.222.162')
     port = int(config_bd.get('Port', 1433))
     user = config_bd.get('User', 'sa')
@@ -273,7 +314,11 @@ def main():
     )
     cursor = conn.cursor()
 
-    # 5. Obtener mapa de proyectos limpios desde dbo.Proyectos
+    # Asegurar existencia de tabla de Backlog en la BD destino
+    asegurar_tabla_backlog_destino(cursor, cols_info_sga)
+    conn.commit()
+
+    # 5. Obtener mapa de proyectos desde dbo.Proyectos
     print("[MSSQL] Cargando mapa de proyectos desde 'dbo.Proyectos'...")
     mapa_proyectos = obtener_mapa_proyectos(cursor)
     print(f"[MSSQL] Mapa cargado con {len(mapa_proyectos)} proyectos únicos.")
@@ -281,10 +326,10 @@ def main():
     # 6. Enriquecer datos con ID_Proyecto y Numero_Proyecto_Limpio
     print("[ETL] Enrumando y relacionando registros con 'dbo.Proyectos'...")
 
+    # RFCs
     data_sm_rfc = []
     matched_sm = 0
     for r in data_sm_rfc_raw:
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Índice 4 corresponde a la columna CC_PROYECT_NUMBER
         cc_proj = r[4]
         num_limpio = extraer_numero_proyecto_limpio(cc_proj)
         id_proy = mapa_proyectos.get(num_limpio) if num_limpio else None
@@ -292,13 +337,11 @@ def main():
             matched_sm += 1
         data_sm_rfc.append(r + (id_proy, num_limpio))
 
+    # Incidentes
     data_rf_sd_sm = []
     matched_rf = 0
     for r in data_rf_sd_sm_raw:
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Índice 6 corresponde a BRIEF_DESCRIPTION
         brief_desc = r[6]
-        
-        # [REEMPLAZAR EN NUEVO SERVIDOR]: Expresión regular para buscar códigos de proyecto en la descripción
         match = re.search(r'(?:py|proyecto|solot)?\s*0*(\d{6,10})', brief_desc or '', re.IGNORECASE)
         num_limpio = match.group(1) if match else None
         id_proy = mapa_proyectos.get(num_limpio) if num_limpio else None
@@ -306,25 +349,36 @@ def main():
             matched_rf += 1
         data_rf_sd_sm.append(r + (id_proy, num_limpio))
 
+    # Backlog SGA (100% de registros preservados)
+    nro_proy_idx = col_names_sga.index('NRO_PROYECTO') if 'NRO_PROYECTO' in col_names_sga else -1
+    data_backlog = []
+    matched_bk = 0
+    for r in rows_sga:
+        raw_nro = r[nro_proy_idx] if nro_proy_idx != -1 else None
+        num_limpio = extraer_numero_proyecto_limpio(raw_nro)
+        id_proy = mapa_proyectos.get(num_limpio) if num_limpio else None
+        if id_proy is not None:
+            matched_bk += 1
+        data_backlog.append(r + (id_proy, num_limpio))
+
     print(f"[ETL] registrosSM_RFC: {matched_sm}/{len(data_sm_rfc)} enlazados con Proyectos.")
     print(f"[ETL] registrosRF_SD_SM: {matched_rf}/{len(data_rf_sd_sm)} enlazados con Proyectos.")
+    print(f"[ETL] CT_BACKLOG_OPERACIONES2: {matched_bk}/{len(data_backlog)} enlazados con Proyectos.")
 
-    # 7. Truncar tablas antes de reinsertar datos
+    # 7. Truncar tablas antes de reinsertar
     print("[MSSQL] Truncando datos de las tablas existentes...")
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Cambiar nombres de tabla si se usan esquemas o nombres distintos
     tabla_rf = "dbo.registrosRF_SD_SM"
     tabla_sm = "dbo.registrosSM_RFC"
-    
+    tabla_bk = "dbo.CT_BACKLOG_OPERACIONES2"
+
     cursor.execute(f"TRUNCATE TABLE {tabla_rf};")
     cursor.execute(f"TRUNCATE TABLE {tabla_sm};")
+    cursor.execute(f"TRUNCATE TABLE {tabla_bk};")
     conn.commit()
-    print(f"[MSSQL] Tablas '{tabla_rf}' y '{tabla_sm}' truncadas correctamente.")
+    print(f"[MSSQL] Tablas '{tabla_rf}', '{tabla_sm}' y '{tabla_bk}' truncadas correctamente.")
 
-    # 8. Insertar datos enriquecidos en la BD
+    # 8. Insertar registros en BD
     print(f"[MSSQL] Insertando registros enriquecidos en '{tabla_rf}'...")
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Ajustar sentencia INSERT si cambian las columnas en la BD receptora
     sql_ins_1 = f"""
     INSERT INTO {tabla_rf} (
         CC_INCIDENT_ID, REQUESTOR_NAME, CURRENT_PHASE, STATUS, SUBMIT_DATE, CLOSE_DATE,
@@ -335,8 +389,6 @@ def main():
     cursor.executemany(sql_ins_1, data_rf_sd_sm)
 
     print(f"[MSSQL] Insertando registros enriquecidos en '{tabla_sm}'...")
-    
-    # [REEMPLAZAR EN NUEVO SERVIDOR]: Ajustar sentencia INSERT si cambian las columnas en la BD receptora
     sql_ins_2 = f"""
     INSERT INTO {tabla_sm} (
         NUMBER, BRIEF_DESCRIPTION, REQUESTED_BY, CLOSE_TIME, CC_PROYECT_NUMBER,
@@ -345,13 +397,33 @@ def main():
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s)
     """
     cursor.executemany(sql_ins_2, data_sm_rfc)
+    conn.commit()
+
+    print(f"[MSSQL] Insertando {len(data_backlog)} registros enriquecidos en '{tabla_bk}'...")
+    col_list_str = ", ".join([f"[{c}]" for c in col_names_sga] + ["[ID_Proyecto]", "[Numero_Proyecto_Limpio]"])
+    row_placeholders = "(" + ", ".join(["%s"] * len(col_names_sga) + ["%d", "%s"]) + ")"
+
+    t0 = time.time()
+    chunk_size = 15
+    stmt_count = 0
+    commit_every = 100
+
+    for i in range(0, len(data_backlog), chunk_size):
+        chunk = data_backlog[i:i + chunk_size]
+        sql_ins_3 = f"INSERT INTO {tabla_bk} ({col_list_str}) VALUES " + ", ".join([row_placeholders] * len(chunk))
+        flat_params = [val for row in chunk for val in row]
+        cursor.execute(sql_ins_3, tuple(flat_params))
+        stmt_count += 1
+        if stmt_count % commit_every == 0:
+            conn.commit()
 
     conn.commit()
-    print("[MSSQL] Inserción completada con éxito.")
+    t1 = time.time()
+    print(f"[MSSQL] Inserción de Backlog ({len(data_backlog)} filas) completada en {round(t1 - t0, 2)}s.")
 
     # 9. Validación y comparación de datos
     print("\n==================================================")
-    print("VALIDACIÓN Y COMPARACIÓN DE DATOS (CSV vs MSSQL)")
+    print("VALIDACIÓN Y COMPARACIÓN DE DATOS (ORIGEN vs MSSQL)")
     print("==================================================")
 
     cursor.execute(f"SELECT COUNT(*) FROM {tabla_rf};")
@@ -360,8 +432,12 @@ def main():
     cursor.execute(f"SELECT COUNT(*) FROM {tabla_sm};")
     count_db_2 = cursor.fetchone()[0]
 
+    cursor.execute(f"SELECT COUNT(*) FROM {tabla_bk};")
+    count_db_3 = cursor.fetchone()[0]
+
     match_1 = (len(data_rf_sd_sm) == count_db_1)
     match_2 = (len(data_sm_rfc) == count_db_2)
+    match_3 = (len(data_backlog) == count_db_3)
 
     print(f"Tabla 1 ({tabla_rf}):")
     print(f"  - Registros en CSV: {len(data_rf_sd_sm)}")
@@ -371,10 +447,20 @@ def main():
     print(f"\nTabla 2 ({tabla_sm}):")
     print(f"  - Registros en CSV: {len(data_sm_rfc)}")
     print(f"  - Registros en BD:  {count_db_2}")
-    print(f"  - Coincidencia:     {'✅ CORRECTO (100% de datos insertados)' if match_2 else '❌ DISCREPANCIA'}")
+    print(f"  - Coincidencia:     {'✅ CORRECTO (100% de datos insertados)' if match_3 else '❌ DISCREPANCIA'}")
+
+    print(f"\nTabla 3 ({tabla_bk}):")
+    print(f"  - Registros en SGA: {len(data_backlog)}")
+    print(f"  - Registros en BD:  {count_db_3}")
+    print(f"  - Coincidencia:     {'✅ CORRECTO (100% de datos insertados)' if match_3 else '❌ DISCREPANCIA'}")
 
     conn.close()
-    print("\n[PROCESO FINALIZADO CON ÉXITO]")
+
+    if match_1 and match_2 and match_3:
+        print("\n[PROCESO FINALIZADO CON ÉXITO]")
+    else:
+        print("\n[PROCESO FINALIZADO CON ERRORES DE COINCIDENCIA]")
+        sys.exit(1)
 
 
 if __name__ == '__main__':
