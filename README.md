@@ -23,7 +23,7 @@ Los datos son procesados, limpiados, enriquecidos mediante vinculación relacion
 - 💯 **Conservación Completa de Datos (100%)**: Carga del 100% de los registros de Backlog independientemente de si cruzan con la tabla de proyectos (`ID_Proyecto` = `NULL` para registros sin coincidencia).
 - 🛡️ **Garantía de Integridad**: Validaciones cruzadas automáticas al finalizar la carga que verifican el 100% de coincidencia entre registros leídos y almacenados en las 3 tablas de destino.
 - 📧 **Notificaciones Automatizadas por Email**: Módulo `ejecutar_y_notificar.py` que captura logs (`ejecucion.log`) y notifica resultados (`ÉXITO` o `ERROR`) por correo electrónico vía SMTP.
-- ⏰ **Programación Automática**: Diseñado para ejecutarse diariamente a las **08:45 AM** y **14:15 PM**.
+- ⏰ **Programación Automática**: Diseñado para ejecutarse diariamente a las **09:00 AM** y **14:45 PM**.
 
 ---
 
@@ -166,16 +166,16 @@ Tabla 3 (dbo.CT_BACKLOG_OPERACIONES2): Coincidencia: ✅ CORRECTO (100% de datos
 
 ## ⏰ Programación de Tareas Automáticas
 
-El proyecto está diseñado para ejecutarse automáticamente dos veces al día: **08:45 AM** y **14:15 PM**.
+El proyecto está diseñado para ejecutarse automáticamente dos veces al día: **09:00 AM** y **14:45 PM**.
 
 ### En Linux (vía Cron)
 
 ```cron
-# Ejecución diaria a las 08:45 AM con notificación por correo
-45 8 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
+# Ejecución diaria a las 09:00 AM con notificación por correo
+0 9 * * * /usr/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
 
-# Ejecución diaria a las 14:15 PM con notificación por correo
-15 14 * * * /ruta/al/proyecto/venv/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
+# Ejecución diaria a las 14:45 PM con notificación por correo
+45 14 * * * /usr/bin/python3 /ruta/al/proyecto/ejecutar_y_notificar.py >> /ruta/al/proyecto/ejecucion.log 2>&1
 ```
 
 ### En Windows (vía Task Scheduler)

@@ -116,7 +116,13 @@ def main():
     duracion_segs = round((fin_dt - inicio_dt).total_seconds(), 2)
 
     es_exitoso = (codigo_salida == 0 and '[PROCESO FINALIZADO CON ÉXITO]' in salida_script)
-    estado_str = "ÉXITO" if es_exitoso else "ERROR"
+    if es_exitoso:
+        if '[WARNING]' in salida_script or '[RESPALDO]' in salida_script:
+            estado_str = "ÉXITO (CON ADVERTENCIAS)"
+        else:
+            estado_str = "ÉXITO"
+    else:
+        estado_str = "ERROR"
 
     footer_log = f"\n--------------------------------------------------\nFIN DE EJECUCIÓN: {fin_dt.strftime('%Y-%m-%d %H:%M:%S')} (Duración: {duracion_segs}s, Estado: {estado_str})\n--------------------------------------------------\n"
 

@@ -123,21 +123,69 @@ def obtener_mapa_proyectos(cursor):
 
 def parsear_csv_rf_sd_sm(filepath):
     """
-    Parsea el archivo registrosRF_SD-SM.csv.
+    Parsea el archivo registrosRF_SD-SM.csv. Si el archivo descargado desde FTP
+    contiene errores del origen SQL Server (AlwaysOn Availability Group) o falta de encabezado,
+    se recurre automáticamente a la última copia válida conocida (.last_good).
     """
+    backup_path = filepath + '.last_good'
     rows = []
     encoding_csv = 'latin-1'
-    with open(filepath, 'r', encoding=encoding_csv) as f:
-        lines = f.readlines()
+    contiene_error_origen = False
+    error_msg = ""
+    lines = []
 
-    header_idx = -1
-    for i, l in enumerate(lines[:10]):
-        if 'CC_INCIDENT_ID;' in l:
-            header_idx = i
-            break
+    try:
+        with open(filepath, 'r', encoding=encoding_csv) as f:
+            lines = f.readlines()
 
-    if header_idx == -1:
-        raise ValueError(f"No se encontró el encabezado en {filepath}")
+        for l in lines[:10]:
+            if 'Sqlcmd: Error:' in l or 'ODBC Driver' in l or 'grupo de disponibilidad' in l:
+                contiene_error_origen = True
+                error_msg = l.strip()
+                break
+
+        header_idx = -1
+        for i, l in enumerate(lines[:10]):
+            if 'CC_INCIDENT_ID;' in l:
+                header_idx = i
+                break
+
+        if contiene_error_origen or header_idx == -1:
+            if contiene_error_origen:
+                reason = f"error del origen SQL Server: {error_msg}"
+            else:
+                primeras_lineas = "".join(lines[:3]).strip()
+                reason = f"no se encontró el encabezado 'CC_INCIDENT_ID;'. Contenido: '{primeras_lineas}'"
+
+            print(f"[WARNING] El archivo descargado {os.path.basename(filepath)} es inválido ({reason}).")
+            if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
+                print(f"[RESPALDO] Usando la última versión válida de respaldo: '{os.path.basename(backup_path)}'...")
+                with open(backup_path, 'r', encoding=encoding_csv) as f_bak:
+                    lines = f_bak.readlines()
+                contiene_error_origen = False
+                header_idx = -1
+                for i, l in enumerate(lines[:10]):
+                    if 'CC_INCIDENT_ID;' in l:
+                        header_idx = i
+                        break
+                if header_idx == -1:
+                    raise ValueError(f"El archivo de respaldo {backup_path} tampoco contiene un encabezado válido.")
+            else:
+                raise ValueError(f"El archivo descargado {os.path.basename(filepath)} contiene un error del origen SQL Server: {error_msg if contiene_error_origen else reason}")
+    except Exception as e:
+        if not (os.path.exists(backup_path) and os.path.getsize(backup_path) > 0):
+            raise e
+        print(f"[WARNING] Error procesando {filepath}: {e}. Recurriendo a respaldo '{os.path.basename(backup_path)}'...")
+        with open(backup_path, 'r', encoding=encoding_csv) as f_bak:
+            lines = f_bak.readlines()
+        contiene_error_origen = False
+        header_idx = -1
+        for i, l in enumerate(lines[:10]):
+            if 'CC_INCIDENT_ID;' in l:
+                header_idx = i
+                break
+        if header_idx == -1:
+            raise ValueError(f"El archivo de respaldo {backup_path} tampoco contiene un encabezado válido.")
 
     delimitador = ';'
     for line in lines[header_idx + 1:]:
@@ -150,26 +198,81 @@ def parsear_csv_rf_sd_sm(filepath):
         row = tuple(limpiar_valor(parts[idx]) for idx in range(15))
         rows.append(row)
 
+    if rows and not contiene_error_origen:
+        try:
+            with open(backup_path, 'w', encoding=encoding_csv) as f_out:
+                f_out.writelines(lines)
+        except Exception:
+            pass
+
     return rows
 
 
 def parsear_csv_sm_rfc(filepath):
     """
-    Parsea el archivo registrosSM-RFC.csv.
+    Parsea el archivo registrosSM-RFC.csv. Si el archivo descargado desde FTP
+    contiene errores del origen SQL Server (AlwaysOn Availability Group) o falta de encabezado,
+    se recurre automáticamente a la última copia válida conocida (.last_good).
     """
+    backup_path = filepath + '.last_good'
     rows = []
     encoding_csv = 'latin-1'
-    with open(filepath, 'r', encoding=encoding_csv) as f:
-        lines = f.readlines()
+    contiene_error_origen = False
+    error_msg = ""
+    lines = []
 
-    header_idx = -1
-    for i, l in enumerate(lines[:10]):
-        if 'NUMBER;' in l:
-            header_idx = i
-            break
+    try:
+        with open(filepath, 'r', encoding=encoding_csv) as f:
+            lines = f.readlines()
 
-    if header_idx == -1:
-        raise ValueError(f"No se encontró el encabezado en {filepath}")
+        for l in lines[:10]:
+            if 'Sqlcmd: Error:' in l or 'ODBC Driver' in l or 'grupo de disponibilidad' in l:
+                contiene_error_origen = True
+                error_msg = l.strip()
+                break
+
+        header_idx = -1
+        for i, l in enumerate(lines[:10]):
+            if 'NUMBER;' in l:
+                header_idx = i
+                break
+
+        if contiene_error_origen or header_idx == -1:
+            if contiene_error_origen:
+                reason = f"error del origen SQL Server: {error_msg}"
+            else:
+                primeras_lineas = "".join(lines[:3]).strip()
+                reason = f"no se encontró el encabezado 'NUMBER;'. Contenido: '{primeras_lineas}'"
+
+            print(f"[WARNING] El archivo descargado {os.path.basename(filepath)} es inválido ({reason}).")
+            if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
+                print(f"[RESPALDO] Usando la última versión válida de respaldo: '{os.path.basename(backup_path)}'...")
+                with open(backup_path, 'r', encoding=encoding_csv) as f_bak:
+                    lines = f_bak.readlines()
+                contiene_error_origen = False
+                header_idx = -1
+                for i, l in enumerate(lines[:10]):
+                    if 'NUMBER;' in l:
+                        header_idx = i
+                        break
+                if header_idx == -1:
+                    raise ValueError(f"El archivo de respaldo {backup_path} tampoco contiene un encabezado válido.")
+            else:
+                raise ValueError(f"El archivo descargado {os.path.basename(filepath)} contiene un error del origen SQL Server: {error_msg if contiene_error_origen else reason}")
+    except Exception as e:
+        if not (os.path.exists(backup_path) and os.path.getsize(backup_path) > 0):
+            raise e
+        print(f"[WARNING] Error procesando {filepath}: {e}. Recurriendo a respaldo '{os.path.basename(backup_path)}'...")
+        with open(backup_path, 'r', encoding=encoding_csv) as f_bak:
+            lines = f_bak.readlines()
+        contiene_error_origen = False
+        header_idx = -1
+        for i, l in enumerate(lines[:10]):
+            if 'NUMBER;' in l:
+                header_idx = i
+                break
+        if header_idx == -1:
+            raise ValueError(f"El archivo de respaldo {backup_path} tampoco contiene un encabezado válido.")
 
     delimitador = ';'
     for line in lines[header_idx + 1:]:
@@ -181,6 +284,13 @@ def parsear_csv_sm_rfc(filepath):
             parts.append('')
         row = tuple(limpiar_valor(parts[idx]) for idx in range(11))
         rows.append(row)
+
+    if rows and not contiene_error_origen:
+        try:
+            with open(backup_path, 'w', encoding=encoding_csv) as f_out:
+                f_out.writelines(lines)
+        except Exception:
+            pass
 
     return rows
 
@@ -447,7 +557,7 @@ def main():
     print(f"\nTabla 2 ({tabla_sm}):")
     print(f"  - Registros en CSV: {len(data_sm_rfc)}")
     print(f"  - Registros en BD:  {count_db_2}")
-    print(f"  - Coincidencia:     {'✅ CORRECTO (100% de datos insertados)' if match_3 else '❌ DISCREPANCIA'}")
+    print(f"  - Coincidencia:     {'✅ CORRECTO (100% de datos insertados)' if match_2 else '❌ DISCREPANCIA'}")
 
     print(f"\nTabla 3 ({tabla_bk}):")
     print(f"  - Registros en SGA: {len(data_backlog)}")
