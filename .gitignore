@@ -10,10 +10,13 @@ __pycache__/
 *$py.class
 *.so
 
-# Environment files and logs
+# Environment files, backups, and logs
 .env
 *.log
 ejecucion.log
+*.last_good
+get-pip.py
+
 
 # Operating system / IDE specific files
 .DS_Store
